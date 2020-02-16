@@ -6,7 +6,7 @@ function settings = get_settings
 %   settings.processed_data_path: summary output files that are generated from the "raw" data so that things go faster on subsequent runs
 %
     % data_path: where the data lives (downloaded from CRCNS)    
-    data_path = '/plab/data/manuscript_specific/2020_ablation/';
+    data_path = '/Volumes/proc_ablate/crcns_upload_for_manuscript/';
     if (~exist(data_path,'dir'))
         error([data_path ' is not a valid directory; see get_settings.m for this']);
     end

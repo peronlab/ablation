@@ -48,7 +48,7 @@ function [data data_columns] = get_ablation_data (anim, abl, force_redo, suppres
         [pre_path post_path abl_curation_file_path subvol_restrict] = get_data_path(anim, abl);
 
         % pull the raw data
-        [t_pre t_dff_pre t_di_pre w_pre w_dff_pre t_pre_sh w_pre_sh er_pre x y z ids subvol] = pull_session_objects(pre_path, anim);
+        [t_pre t_dff_pre t_di_pre w_pre w_dff_pre t_pre_sh w_pre_sh er_pre x y z ids subvol] = pull_struct(pre_path, anim);
         if (~issorted(ids))
             disp('SORT FAIL ; fixing');
             [ids sorti] = sort(ids,'ascend');
@@ -68,7 +68,7 @@ function [data data_columns] = get_ablation_data (anim, abl, force_redo, suppres
             end
         end
             
-        [t_post t_dff_post t_di_post w_post w_dff_post t_post_sh w_post_sh er_post irr_x irr_y irr_z ids_post] = pull_session_objects(post_path, anim);
+        [t_post t_dff_post t_di_post w_post w_dff_post t_post_sh w_post_sh er_post irr_x irr_y irr_z ids_post] = pull_struct(post_path, anim);
 
         if (length(ids_post) ~= length(ids))
             disp('Pre/post mismatch ; fixing');
@@ -172,8 +172,89 @@ function [data data_columns] = get_ablation_data (anim, abl, force_redo, suppres
     end
 
 % 
-% pulls key data from session object(s) ; x y z should be in MICRONS 
+% pulls key data from session object(s) ; x y z should be in MICRONS ; this method is in use
 %
+function [t_score t_dff t_di w_score w_dff t_score_sh w_score_sh e_rate x y z ids subvol] = pull_struct(dat_path, anim)
+    pix2um = 600/512;
+    
+    % GLM feature names
+    whisk_feat = 'eventBasedDff_k16t14_MeanWhiskerAmplitudeGLMScore';
+    touch_feat_base = 'eventBasedDff_k16t14_%sAbsMaxKappaZeroNotouchGLMScore';
+
+    t_score = [];
+    t_dff = [];
+    w_score = [];
+    w_dff = [];
+    t_score_sh = [];
+    w_score_sh = [];
+    e_rate = [];
+    x = [];
+    y = [];
+    z = [];
+    ids = [];
+    subvol = [];
+    t_di = [];
+
+    cd (dat_path);
+    fl = dir('an*sess_struct.mat'); 
+    for f=1:length(fl) ; 
+        load(fl(f).name) ; 
+        s = sess;
+
+        if (f == 1) % get some stuff
+            wtag = s.whiskerTag{1};
+
+            touch_feat = sprintf(touch_feat_base, lower(wtag));
+        end
+
+        whisk_feat_sh = strrep(whisk_feat, 'GLMScore','GLMShuffleScore');
+        touch_feat_sh = strrep(touch_feat, 'GLMScore','GLMShuffleScore');
+        touch_feat_kern = strrep(touch_feat, 'GLMScore','GLMStimKernelWeight');
+
+        t_score = [t_score s.caTSA.cellFeatures.values{find(strcmp(s.caTSA.cellFeatures.keys, touch_feat))}]; 
+        t_score_sh = [t_score_sh s.caTSA.cellFeatures.values{find(strcmp(s.caTSA.cellFeatures.keys, touch_feat_sh))}];
+        w_score = [w_score s.caTSA.cellFeatures.values{find(strcmp(s.caTSA.cellFeatures.keys, whisk_feat))}] ; 
+        w_score_sh = [w_score_sh s.caTSA.cellFeatures.values{find(strcmp(s.caTSA.cellFeatures.keys, whisk_feat_sh))}];
+        
+        % directionality idx
+        t_kern = s.caTSA.cellFeatures.values{find(strcmp(s.caTSA.cellFeatures.keys, touch_feat_kern))};
+        if (0) % use means
+            nkp = floor(size(t_kern,1)/2);
+            t_pro_resp = nanmean(t_kern(1:nkp,:));
+            t_ret_resp = nanmean(t_kern((end-nkp+1):end,:));
+            t_di_mean = (t_pro_resp-t_ret_resp)./(t_pro_resp+t_ret_resp);
+            t_di = [t_di t_di_mean];
+        else % use ends
+            t_di_ends = (t_kern(1,:)-t_kern(end,:))./(t_kern(1,:)+t_kern(end,:));
+            t_di = [t_di t_di_ends];
+        end
+
+        e_rate = [e_rate s.caTSA.cellFeatures.values{find(strcmp(s.caTSA.cellFeatures.keys, 'eventRateHz'))} ];
+
+        image_bounds = [512 512];
+        for v=1:length(s.caTSA.roiArray)
+            coms = nan*zeros(length(s.caTSA.roiArray{v}.rois), 2);
+            for r=1:length(s.caTSA.roiArray{v}.rois)
+            	x_ = ceil(s.caTSA.roiArray{v}.rois{r}.indices/image_bounds(1));
+                y_ = s.caTSA.roiArray{v}.rois{r}.indices - (floor(s.caTSA.roiArray{v}.rois{r}.indices/image_bounds(1))*image_bounds(1));
+
+                if (length(x_) > 0)
+                    coms(r,:) = [mean(x_) mean(y_)]*pix2um;
+                end
+            end
+
+            z = [z ones(1,size(coms,1))*((f-1)*45 + (v-1)*15);];
+            x = [x coms(:,1)'];
+            y = [y coms(:,2)'];
+            ids = [ids s.caTSA.roiArray{v}.roiIds];
+            subvol = [subvol f+0*s.caTSA.roiArray{v}.roiIds];
+        end
+    end
+
+% 
+% pulls key data from session object(s) ; x y z should be in MICRONS ; this is an OLD method using a different data format
+%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% NOT USED - LEFT IN FOR POSTERITY %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function [t_score t_dff t_di w_score w_dff t_score_sh w_score_sh e_rate x y z ids subvol] = pull_session_objects(dat_path, anim)
     pix2um = 600/512;
     

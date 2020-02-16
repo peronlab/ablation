@@ -220,8 +220,8 @@ function [corr_abl_pre corr_abl_post simulated_ablati] = get_single_animal_data(
         corr_abl_post = nan*zeros(size(data,1),1);
 
         % compile the vectors from all the session files
-        [cell_id_pre trial_avg_dff_pre] = pull_session_objects(pre_path, anim);
-        [cell_id_post trial_avg_dff_post] = pull_session_objects(post_path, anim);
+        [cell_id_pre trial_avg_dff_pre] = pull_structs(pre_path, anim);
+        [cell_id_post trial_avg_dff_post] = pull_structs(post_path, anim);
 
         % sort the above to make them consistent with "data" matrix
         ids = data(:, find(strcmp(data_columns,'cell_id')));
@@ -261,10 +261,10 @@ function [corr_abl_pre corr_abl_post simulated_ablati] = get_single_animal_data(
         save(data_file, 'corr_abl_pre', 'corr_abl_post','anim','abl_type', 'simulated_ablati');
     end
    
-function [cell_id trial_avg_dff] = pull_session_objects(dat_path, anim);
+function [cell_id trial_avg_dff] = pull_structs(dat_path, anim);
 
     cd (dat_path);
-    fl = dir('an*sess.mat'); 
+    fl = dir('an*sess_struct.mat'); 
     ntp_single = 70;
     ntp = ntp_single*2;
 
@@ -274,23 +274,21 @@ function [cell_id trial_avg_dff] = pull_session_objects(dat_path, anim);
     % loop thru files
     for f=1:length(fl) ; 
         load(fl(f).name) ; 
+        s = sess;
     
         cell_id = [cell_id s.caTSA.ids];
 
-        % sanity
-        if (length( s.caTSA.cellFeatures.get('dffBased_HitLTrialAvg')) == 0)
-            gcfParamsBasic.caDffTSA = 'caTSA.dffTimeSeriesArray';
-            gcfParamsBasic.rootTag = 'dffBased_';
-            gcfParamsBasic.analyses = {'travg'};
-            s.generateCellFeaturesHash('local', gcfParamsBasic);       
-        end
-
-        % compile trial_avg_dff
+        % compile data
         this_matrix =  nan*zeros(ntp, length(s.caTSA.ids));
-        vv = s.caTSA.cellFeatures.get('dffBased_HitLTrialAvg');
-        this_matrix(1:ntp_single,:) = vv(1:ntp_single,:);
-        vv = s.caTSA.cellFeatures.get('dffBased_HitRTrialAvg');
-        this_matrix(1:ntp_single,:) = vv(1:ntp_single,:);
+        if (length( find(strcmp( s.caTSA.cellFeatures.keys,'dffBased_HitLTrialAvg'))) == 0)
+            % GENERATE IT -- THIS IS WEIRD IF YOU SEE IT
+            disp(['Missing dff-based trial averages for ' fl(f).name]);
+        else
+            vv = s.caTSA.cellFeatures.values{find(strcmp( s.caTSA.cellFeatures.keys,'dffBased_HitLTrialAvg'))};       
+            this_matrix(1:ntp_single,:) = vv(1:ntp_single,:);
+            vv = s.caTSA.cellFeatures.values{find(strcmp( s.caTSA.cellFeatures.keys,'dffBased_HitRTrialAvg'))};        
+            this_matrix(1:ntp_single,:) = vv(1:ntp_single,:);
+        end
 
         trial_avg_dff = [trial_avg_dff this_matrix];
     end 
